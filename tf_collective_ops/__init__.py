@@ -16,4 +16,5 @@
 
 from __future__ import absolute_import
 
-from tf_collective_ops.python.ops.tf_collective_ops import allreduce 
+from tf_collective_ops.python.ops.tf_collective_ops import allreduce, broadcast
+from tf_collective_ops.python.ops.optimizer_wrapper import DistributedOptimizer 

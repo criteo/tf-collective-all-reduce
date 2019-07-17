@@ -11,6 +11,11 @@
       Name("Allreduce").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
       AllreduceOp<type>)
 
+#define REGISTER_KERNEL_BROADCAST(type)                                       \
+  REGISTER_KERNEL_BUILDER(                                          \
+      Name("Broadcast").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
+      BroadcastOp<type>)
+
 #define ALLREDUCE_SUM 2
 
 using namespace tensorflow;
@@ -41,12 +46,22 @@ int getTypeId() {
     return typeId;
 }
 
+void initRabit() {
+    static bool isInitialized = false;
+    if (!isInitialized) {
+        LOG(INFO) << "Initializing Rabit";
+        RabitInit(0, nullptr);
+        LOG(INFO) << "Rabit is initialized";
+        isInitialized = true;
+    }
+}
+
 template <typename T>
 class AllreduceOp : public OpKernel {
 public:
   explicit AllreduceOp(OpKernelConstruction* context)
       : OpKernel(context) {
-    RabitInit(0, nullptr);
+    initRabit();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -64,6 +79,7 @@ public:
       output_flat(i) = input_flat(i);
     }
 
+    LOG(INFO) << "Before Allreduce";
     RabitAllreduce(
         (void *)(output_flat.data()), output_flat.size(),
         getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
@@ -79,4 +95,45 @@ REGISTER_KERNEL_ALLREDUCE(int64);
 REGISTER_KERNEL_ALLREDUCE(uint64);
 REGISTER_KERNEL_ALLREDUCE(float);
 REGISTER_KERNEL_ALLREDUCE(double);
+
+template <typename T>
+class BroadcastOp : public OpKernel {
+public:
+  explicit BroadcastOp(OpKernelConstruction* context)
+      : OpKernel(context) {
+    initRabit();    
+  }
+
+  void Compute(OpKernelContext* context) override {
+    auto input_tensor = context->input(0);
+    auto sender_rank = context->input(1).scalar<int>()();
+    auto cur_rank = RabitGetRank();
+    Tensor* output_tensor = nullptr;
+
+    auto input_flat = input_tensor.flat<T>();
+    unsigned long input_total_size = input_flat.size() * sizeof(T);
+    RabitBroadcast((void *)(&input_total_size), sizeof(input_total_size), sender_rank);
+
+    if (cur_rank == sender_rank) {
+      context->set_output(0, input_tensor);
+      RabitBroadcast((void *)(input_flat.data()), input_total_size, sender_rank);
+    }
+    else {
+      OP_REQUIRES_OK(
+          context, context->allocate_output(0, input_tensor.shape(), &output_tensor));
+      auto output_flat = output_tensor->flat<T>();
+      RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
+    }    
+  }
+};
+
+REGISTER_KERNEL_BROADCAST(int8);
+REGISTER_KERNEL_BROADCAST(uint8);
+REGISTER_KERNEL_BROADCAST(int32);
+REGISTER_KERNEL_BROADCAST(uint32);
+REGISTER_KERNEL_BROADCAST(int64);
+REGISTER_KERNEL_BROADCAST(uint64);
+REGISTER_KERNEL_BROADCAST(float);
+REGISTER_KERNEL_BROADCAST(double);
+
 }
