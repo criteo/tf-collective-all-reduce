@@ -52,6 +52,7 @@ void initRabit() {
         LOG(INFO) << "Initializing Rabit";
         RabitInit(0, nullptr);
         LOG(INFO) << "Rabit is initialized";
+        LOG(INFO) << "Rank: " << RabitGetRank();
         isInitialized = true;
     }
 }
@@ -79,11 +80,12 @@ public:
       output_flat(i) = input_flat(i);
     }
 
-    LOG(INFO) << "Before Allreduce";
+    LOG(INFO) << "Before allreduce: " << output_flat;
     RabitAllreduce(
         (void *)(output_flat.data()), output_flat.size(),
         getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
     );
+    LOG(INFO) << "After allreduce: " << output_flat;
   }
 };
 
@@ -123,6 +125,7 @@ public:
           context, context->allocate_output(0, input_tensor.shape(), &output_tensor));
       auto output_flat = output_tensor->flat<T>();
       RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
+      LOG(INFO) << "Broadcasted: " << output_flat;
     }    
   }
 };
