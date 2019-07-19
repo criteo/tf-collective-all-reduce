@@ -3,6 +3,7 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/platform/default/integral_types.h"
 
+#include <mutex> 
 
 #include "rabit/include/rabit/c_api.h"
 
@@ -57,6 +58,8 @@ void initRabit() {
     }
 }
 
+std::mutex mtx; 
+
 template <typename T>
 class AllreduceOp : public OpKernel {
 public:
@@ -66,6 +69,7 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    mtx.lock();
     const Tensor& input_tensor = context->input(0);
 
     Tensor* output_tensor = NULL;
@@ -80,12 +84,14 @@ public:
       output_flat(i) = input_flat(i);
     }
 
-    LOG(INFO) << "Before allreduce: " << output_flat;
+    LOG(INFO) << "Before allreduce (input_flat): " << input_flat;
+    LOG(INFO) << "Before allreduce (output_flat): " << output_flat;
     RabitAllreduce(
         (void *)(output_flat.data()), output_flat.size(),
         getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
     );
     LOG(INFO) << "After allreduce: " << output_flat;
+    mtx.unlock();
   }
 };
 
@@ -107,6 +113,7 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    mtx.lock();
     auto input_tensor = context->input(0);
     auto sender_rank = context->input(1).scalar<int>()();
     auto cur_rank = RabitGetRank();
@@ -119,14 +126,16 @@ public:
     if (cur_rank == sender_rank) {
       context->set_output(0, input_tensor);
       RabitBroadcast((void *)(input_flat.data()), input_total_size, sender_rank);
+      LOG(INFO) << "Broadcasted (sender): " << input_flat << std::endl;
     }
     else {
       OP_REQUIRES_OK(
           context, context->allocate_output(0, input_tensor.shape(), &output_tensor));
       auto output_flat = output_tensor->flat<T>();
       RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
-      LOG(INFO) << "Broadcasted: " << output_flat;
-    }    
+      LOG(INFO) << "Received: " << output_flat;
+    }
+    mtx.unlock();    
   }
 };
 

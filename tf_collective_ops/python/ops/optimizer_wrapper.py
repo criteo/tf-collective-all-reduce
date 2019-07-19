@@ -35,6 +35,7 @@ class DistributedOptimizer(tf.train.Optimizer):
                 else grad for grad in grads
             ]
 
+            # return [allreduce_grad(grads[1])]
             return [allreduce_grad(grad) if grad is not None else grad for grad in grads]
 
         self._allreduce_grads = allreduce_grads
