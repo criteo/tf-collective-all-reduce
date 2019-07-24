@@ -23,20 +23,17 @@ class DistributedOptimizer(tf.train.Optimizer):
         self._optimizer = optimizer
         self.n_workers = n_workers
 
-        def allreduce_grad(grad):
-            n_workers = tf.cast(self.n_workers, dtype=grad.dtype)
-            summed_grad = myallreduce(grad)
-            new_grad = tf.div(summed_grad, n_workers)
-            return new_grad
-
         def allreduce_grads(grads):
             grads = [
                 tf.convert_to_tensor(grad) if grad is not None and isinstance(grad, tf.IndexedSlices) 
                 else grad for grad in grads
             ]
 
-            # return [allreduce_grad(grads[1])]
-            return [allreduce_grad(grad) if grad is not None else grad for grad in grads]
+            print(f"grads: {grads}")
+
+            n_workers = tf.cast(self.n_workers, dtype=grads[0].dtype)
+            summed_grads = myallreduce(grads)
+            return [tf.div(summed_grad, n_workers) for summed_grad in summed_grads]
 
         self._allreduce_grads = allreduce_grads
 

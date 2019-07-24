@@ -69,29 +69,29 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    mtx.lock();
-    const Tensor& input_tensor = context->input(0);
-
-    Tensor* output_tensor = NULL;
-    OP_REQUIRES_OK(context, context->allocate_output(0, input_tensor.shape(),
+    const int n_tensors = context->input(0).scalar<int>()();
+    LOG(INFO) << "n_tensors: " << n_tensors;
+    for (int i = 1; i <= n_tensors; i++) {
+        const Tensor& input_tensor = context->input(i);
+        Tensor* output_tensor = NULL;
+        OP_REQUIRES_OK(context, context->allocate_output(i-1, input_tensor.shape(),
                                                      &output_tensor));
 
-    auto input_flat = input_tensor.flat<T>();
-    auto output_flat = output_tensor->flat<T>();
+        auto input_flat = input_tensor.flat<T>();
+        auto output_flat = output_tensor->flat<T>();
 
-    const int N = input_flat.size();
-    for (int i = 0; i < N; i++) {
-      output_flat(i) = input_flat(i);
+        const int N = input_flat.size();
+        for (int i = 0; i < N; i++) {
+            output_flat(i) = input_flat(i);
+        }
+
+        LOG(INFO) << "Before allreduce (output_flat): " << output_flat;
+        RabitAllreduce(
+            (void *)(output_flat.data()), output_flat.size(),
+            getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
+        );
+        LOG(INFO) << "After allreduce: " << output_flat;
     }
-
-    LOG(INFO) << "Before allreduce (input_flat): " << input_flat;
-    LOG(INFO) << "Before allreduce (output_flat): " << output_flat;
-    RabitAllreduce(
-        (void *)(output_flat.data()), output_flat.size(),
-        getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
-    );
-    LOG(INFO) << "After allreduce: " << output_flat;
-    mtx.unlock();
   }
 };
 
@@ -114,28 +114,32 @@ public:
 
   void Compute(OpKernelContext* context) override {
     mtx.lock();
-    auto input_tensor = context->input(0);
-    auto sender_rank = context->input(1).scalar<int>()();
     auto cur_rank = RabitGetRank();
-    Tensor* output_tensor = nullptr;
+    auto sender_rank = context->input(0).scalar<int>()();
+    auto n_tensors = context->input(1).scalar<int>()();
+    LOG(INFO) << "n_tensors: " << n_tensors;
+    for (int i = 0; i < n_tensors; i++) {
+        auto input_tensor = context->input(i+2);
+        Tensor* output_tensor = nullptr;
 
-    auto input_flat = input_tensor.flat<T>();
-    unsigned long input_total_size = input_flat.size() * sizeof(T);
-    RabitBroadcast((void *)(&input_total_size), sizeof(input_total_size), sender_rank);
+        auto input_flat = input_tensor.flat<T>();
+        unsigned long input_total_size = input_flat.size() * sizeof(T);
+        RabitBroadcast((void *)(&input_total_size), sizeof(input_total_size), sender_rank);
 
-    if (cur_rank == sender_rank) {
-      context->set_output(0, input_tensor);
-      RabitBroadcast((void *)(input_flat.data()), input_total_size, sender_rank);
-      LOG(INFO) << "Broadcasted (sender): " << input_flat << std::endl;
+        if (cur_rank == sender_rank) {
+            context->set_output(i, input_tensor);
+            RabitBroadcast((void *)(input_flat.data()), input_total_size, sender_rank);
+            LOG(INFO) << "Broadcasted (sender): " << input_flat << std::endl;
+        }
+        else {
+            OP_REQUIRES_OK(
+            context, context->allocate_output(i, input_tensor.shape(), &output_tensor));
+            auto output_flat = output_tensor->flat<T>();
+            RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
+            LOG(INFO) << "Received: " << output_flat;
+        }
+        mtx.unlock();    
     }
-    else {
-      OP_REQUIRES_OK(
-          context, context->allocate_output(0, input_tensor.shape(), &output_tensor));
-      auto output_flat = output_tensor->flat<T>();
-      RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
-      LOG(INFO) << "Received: " << output_flat;
-    }
-    mtx.unlock();    
   }
 };
 
