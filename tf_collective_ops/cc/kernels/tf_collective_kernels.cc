@@ -3,8 +3,6 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/platform/default/integral_types.h"
 
-#include <mutex> 
-
 #include "rabit/include/rabit/c_api.h"
 
 #define REGISTER_KERNEL_ALLREDUCE(type)                                       \
@@ -16,6 +14,11 @@
   REGISTER_KERNEL_BUILDER(                                          \
       Name("Broadcast").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
       BroadcastOp<type>)
+
+#define REGISTER_KERNEL_ALLGATHER(type)                                       \
+  REGISTER_KERNEL_BUILDER(                                          \
+      Name("Allgather").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
+      AllgatherOp<type>)
 
 #define ALLREDUCE_SUM 2
 
@@ -58,8 +61,6 @@ void initRabit() {
     }
 }
 
-std::mutex mtx; 
-
 template <typename T>
 class AllreduceOp : public OpKernel {
 public:
@@ -70,7 +71,7 @@ public:
 
   void Compute(OpKernelContext* context) override {
     const int n_tensors = context->input(0).scalar<int>()();
-    LOG(INFO) << "n_tensors: " << n_tensors;
+    //LOG(INFO) << "n_tensors: " << n_tensors;
     for (int i = 1; i <= n_tensors; i++) {
         const Tensor& input_tensor = context->input(i);
         Tensor* output_tensor = NULL;
@@ -85,12 +86,12 @@ public:
             output_flat(i) = input_flat(i);
         }
 
-        LOG(INFO) << "Before allreduce (output_flat): " << output_flat;
+        //LOG(INFO) << "Before allreduce (output_flat): " << output_flat;
         RabitAllreduce(
             (void *)(output_flat.data()), output_flat.size(),
             getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
         );
-        LOG(INFO) << "After allreduce: " << output_flat;
+        //LOG(INFO) << "After allreduce: " << output_flat;
     }
   }
 };
@@ -113,11 +114,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-    mtx.lock();
     auto cur_rank = RabitGetRank();
     auto sender_rank = context->input(0).scalar<int>()();
     auto n_tensors = context->input(1).scalar<int>()();
-    LOG(INFO) << "n_tensors: " << n_tensors;
+    //LOG(INFO) << "n_tensors: " << n_tensors;
     for (int i = 0; i < n_tensors; i++) {
         auto input_tensor = context->input(i+2);
         Tensor* output_tensor = nullptr;
@@ -129,16 +129,15 @@ public:
         if (cur_rank == sender_rank) {
             context->set_output(i, input_tensor);
             RabitBroadcast((void *)(input_flat.data()), input_total_size, sender_rank);
-            LOG(INFO) << "Broadcasted (sender): " << input_flat << std::endl;
+            //LOG(INFO) << "Broadcasted (sender): " << input_flat << std::endl;
         }
         else {
             OP_REQUIRES_OK(
             context, context->allocate_output(i, input_tensor.shape(), &output_tensor));
             auto output_flat = output_tensor->flat<T>();
             RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
-            LOG(INFO) << "Received: " << output_flat;
+            //LOG(INFO) << "Received: " << output_flat;
         }
-        mtx.unlock();    
     }
   }
 };
@@ -151,5 +150,50 @@ REGISTER_KERNEL_BROADCAST(int64);
 REGISTER_KERNEL_BROADCAST(uint64);
 REGISTER_KERNEL_BROADCAST(float);
 REGISTER_KERNEL_BROADCAST(double);
+
+template <typename T>
+class AllgatherOp : public OpKernel {
+public:
+  explicit AllgatherOp(OpKernelConstruction* context)
+      : OpKernel(context) {
+    initRabit();
+  }
+
+  void Compute(OpKernelContext* context) override {
+        const Tensor& input_tensor = context->input(0);
+        auto input_shape = input_tensor.shape();
+        
+        Tensor* output_tensor = NULL;
+        
+        uint32 n_d0 = input_shape.dim_size(0);
+        LOG(INFO) << "d0 before: " << n_d0;
+        RabitAllreduce((void *)(&n_d0), 1, getTypeId<uint32>(), ALLREDUCE_SUM, nullptr, nullptr);
+        LOG(INFO) << "d0 after: " << n_d0;
+
+        auto output_shape = TensorShape();
+        output_shape.AppendShape(input_shape);
+        output_shape.set_dim(0, n_d0);
+        OP_REQUIRES_OK(context, context->allocate_output(0, output_shape,
+                                                     &output_tensor));
+
+        auto input_flat = input_tensor.flat<T>();
+        auto output_flat = output_tensor->flat<T>();
+
+        for (int j = 0; j < input_flat.size(); j++) {
+            output_flat(j) = input_flat(j);
+        }
+
+        RabitAllgather((void *)output_flat.data(), input_flat.size(), getTypeId<T>(), n_d0);
+    }
+};
+
+REGISTER_KERNEL_ALLGATHER(int8);
+REGISTER_KERNEL_ALLGATHER(uint8);
+REGISTER_KERNEL_ALLGATHER(int32);
+REGISTER_KERNEL_ALLGATHER(uint32);
+REGISTER_KERNEL_ALLGATHER(int64);
+REGISTER_KERNEL_ALLGATHER(uint64);
+REGISTER_KERNEL_ALLGATHER(float);
+REGISTER_KERNEL_ALLGATHER(double);
 
 }

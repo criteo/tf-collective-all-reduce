@@ -24,6 +24,11 @@ class DistributedOptimizer(tf.train.Optimizer):
         self.n_workers = n_workers
 
         def allreduce_grads(grads):
+            for grad in grads:
+                if isinstance(grad, tf.IndexedSlices):
+                    print(f"indices: {grad.indices}")
+                    print(f"values: {grad.values}")
+            
             grads = [
                 tf.convert_to_tensor(grad) if grad is not None and isinstance(grad, tf.IndexedSlices) 
                 else grad for grad in grads
