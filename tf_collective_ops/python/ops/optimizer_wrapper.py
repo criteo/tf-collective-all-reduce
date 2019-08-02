@@ -1,5 +1,6 @@
 import tensorflow as tf
-from tf_collective_ops import allreduce as myallreduce
+from tf_collective_ops import allreduce, allgather
+from tensorflow.python.training.optimizer import _deduplicate_indexed_slices
 
 
 class DistributedOptimizer(tf.train.Optimizer):
@@ -23,22 +24,43 @@ class DistributedOptimizer(tf.train.Optimizer):
         self._optimizer = optimizer
         self.n_workers = n_workers
 
-        def allreduce_grads(grads):
-            for grad in grads:
-                if isinstance(grad, tf.IndexedSlices):
-                    print(f"indices: {grad.indices}")
-                    print(f"values: {grad.values}")
-            
-            grads = [
-                tf.convert_to_tensor(grad) if grad is not None and isinstance(grad, tf.IndexedSlices) 
-                else grad for grad in grads
-            ]
+        def allreduce_grads(grads_vars):
+            print(f"grads: {grads_vars}")
+           
+            grads_vars_to_gather = []
+            grads_vars_to_reduce = []
+            for grad_var in grads_vars:
+                if isinstance(grad_var[0], tf.IndexedSlices):
+                    grads_vars_to_gather.append(grad_var)
+                else:
+                    grads_vars_to_reduce.append(grad_var)
 
-            print(f"grads: {grads}")
+            print(f"grads_vars_to_gather: {grads_vars_to_gather}")
+            print(f"grads_vars_to_reduce: {grads_vars_to_reduce}")
 
-            n_workers = tf.cast(self.n_workers, dtype=grads[0].dtype)
-            summed_grads = myallreduce(grads)
-            return [tf.div(summed_grad, n_workers) for summed_grad in summed_grads]
+            new_grads_vars = []
+
+            if len(grads_vars_to_gather) > 0:
+                grads_to_gather, vars = zip(*grads_vars_to_gather)
+                gathered_indices = allgather([grad.indices for grad in grads_to_gather])
+                gathered_values = allgather([grad.values for grad in grads_to_gather])
+                n_workers = tf.cast(self.n_workers, dtype=gathered_values[0].dtype)
+                gathered_values = [tf.div(grad, n_workers) for grad in gathered_values]
+                gathered_grads = [
+                    tf.IndexedSlices(
+                        indices=indices, values=values, dense_shape=grad_to_gather.dense_shape
+                    ) for grad_to_gather, values, indices in zip(grads_to_gather, gathered_values, gathered_indices)
+                ]
+                new_grads_vars.extend(list(zip(gathered_grads, vars)))
+
+            if len(grads_vars_to_reduce) > 0:
+                grads_to_reduce, vars = zip(*grads_vars_to_reduce)
+                reduced_grads = allreduce(grads_to_reduce)
+                n_workers = tf.cast(self.n_workers, dtype=reduced_grads[0].dtype)
+                reduced_grads = [tf.div(grad, n_workers) for grad in reduced_grads]
+                new_grads_vars.extend(list(zip(reduced_grads, vars)))
+
+            return new_grads_vars
 
         self._allreduce_grads = allreduce_grads
 
@@ -55,9 +77,8 @@ class DistributedOptimizer(tf.train.Optimizer):
         """
         gradients = self._optimizer.compute_gradients(*args, **kwargs)
         if self.n_workers > 1:
-            grads, vars = zip(*gradients)
-            avg_grads = self._allreduce_grads(grads)
-            return list(zip(avg_grads, vars))
+            avg_grads = self._allreduce_grads(gradients)
+            return avg_grads
         else:
             return gradients
 
