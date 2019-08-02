@@ -30,9 +30,11 @@ REGISTER_OP("Allgather")
     .Input("tensor: T")
     .Output("sum: T")
     .SetShapeFn([](shape_inference::InferenceContext* c) {
-      shape_inference::ShapeHandle output;
-      TF_RETURN_IF_ERROR(
-          c->ReplaceDim(c->input(1), 0, c->UnknownDim(), &output));
-      c->set_output(0, output);
+      for (size_t i = 1; i < c->num_inputs(); i++) {
+        shape_inference::ShapeHandle output;
+        TF_RETURN_IF_ERROR(
+          c->ReplaceDim(c->input(i), 0, c->UnknownDim(), &output));
+        c->set_output(i-1, output);
+      }
       return Status::OK();
     });

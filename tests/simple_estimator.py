@@ -74,7 +74,7 @@ def main():
             gen,
             (tf.int64, tf.int64, tf.float32)
         )
-        dataset = dataset.batch(3)
+        #dataset = dataset.batch(3)
         dataset = dataset.map(
             lambda x, y, z: {'partnerid': [x], 'campaignid': [y], label_name: [z]}
         )

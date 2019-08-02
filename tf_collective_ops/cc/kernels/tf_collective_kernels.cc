@@ -164,10 +164,13 @@ public:
       for (int i = 1; i <= n_tensors; i++) {  
         const Tensor& input_tensor = context->input(i);
         auto input_shape = input_tensor.shape();
-        
+        auto input_flat = input_tensor.flat<T>();
+
         Tensor* output_tensor = NULL;
         
         uint32 n_d0 = input_shape.dim_size(0);
+        size_t nelems_per_slice = input_flat.size() / n_d0;
+        
         RabitAllreduce((void *)(&n_d0), 1, getTypeId<uint32>(), ALLREDUCE_SUM, nullptr, nullptr);
 
         auto output_shape = TensorShape();
@@ -176,14 +179,13 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(i-1, output_shape,
                                                      &output_tensor));
 
-        auto input_flat = input_tensor.flat<T>();
         auto output_flat = output_tensor->flat<T>();
 
         for (int j = 0; j < input_flat.size(); j++) {
             output_flat(j) = input_flat(j);
         }
 
-        RabitAllgather((void *)output_flat.data(), input_flat.size(), getTypeId<T>(), n_d0);
+        RabitAllgather((void *)output_flat.data(), input_flat.size(), getTypeId<T>(), nelems_per_slice * n_d0);
     }
   }
 };
