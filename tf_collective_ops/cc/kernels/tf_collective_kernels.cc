@@ -160,20 +160,20 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
-        const Tensor& input_tensor = context->input(0);
+      const int n_tensors = context->input(0).scalar<int>()();
+      for (int i = 1; i <= n_tensors; i++) {  
+        const Tensor& input_tensor = context->input(i);
         auto input_shape = input_tensor.shape();
         
         Tensor* output_tensor = NULL;
         
         uint32 n_d0 = input_shape.dim_size(0);
-        LOG(INFO) << "d0 before: " << n_d0;
         RabitAllreduce((void *)(&n_d0), 1, getTypeId<uint32>(), ALLREDUCE_SUM, nullptr, nullptr);
-        LOG(INFO) << "d0 after: " << n_d0;
 
         auto output_shape = TensorShape();
         output_shape.AppendShape(input_shape);
         output_shape.set_dim(0, n_d0);
-        OP_REQUIRES_OK(context, context->allocate_output(0, output_shape,
+        OP_REQUIRES_OK(context, context->allocate_output(i-1, output_shape,
                                                      &output_tensor));
 
         auto input_flat = input_tensor.flat<T>();
@@ -185,6 +185,7 @@ public:
 
         RabitAllgather((void *)output_flat.data(), input_flat.size(), getTypeId<T>(), n_d0);
     }
+  }
 };
 
 REGISTER_KERNEL_ALLGATHER(int8);

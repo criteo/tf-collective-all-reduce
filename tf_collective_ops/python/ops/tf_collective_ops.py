@@ -6,7 +6,8 @@ from tensorflow.python.platform import resource_loader
 tf_collective_ops = load_library.load_op_library(
     resource_loader.get_path_to_datafile('_collective_ops.so'))
 
-allgather = tf_collective_ops.allgather
+def allgather(tensors):
+    return tf_collective_ops.allgather(tf.convert_to_tensor(len(tensors), dtype=tf.uint32), tensors)
 
 def broadcast(rank, tensors):
     if not isinstance(tensors, list):
@@ -34,6 +35,3 @@ def allreduce(tensors):
     #    return cast_reduced_tensors[0]
     #else:
     #    return cast_reduced_tensors
-
-#allreduce = tf_collective_ops.allreduce
-#broadcast = tf_collective_ops.broadcast
