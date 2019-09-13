@@ -4,7 +4,7 @@ from setuptools import setup
 
 __version__ = '0.0.1'
 REQUIRED_PACKAGES = [
-    'tensorflow >= 1.12.0'
+    'tensorflow == 1.12.2'
 ]
 
 
