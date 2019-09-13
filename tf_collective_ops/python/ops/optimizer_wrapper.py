@@ -23,7 +23,7 @@ class DistributedOptimizer(tf.train.Optimizer):
         self._optimizer = optimizer
         self.n_workers = n_workers
 
-        def allreduce_grads(grads):
+        def allreduce_grads(grads, average=True):
             def op_with_dependencies(dependencies, op, grads):
                 with tf.control_dependencies(dependencies):
                     res = op(grads)
@@ -49,8 +49,9 @@ class DistributedOptimizer(tf.train.Optimizer):
 
             if len(grads_to_gather) > 0:
                 gathered_indices = _allgather(dependencies, [grad.indices for grad in grads_to_gather])
-                gathered_values = [tf.div(gathered_value, self.n_workers)
-                                   for gathered_value in _allgather(dependencies, [grad.values for grad in grads_to_gather])]
+                gathered_values = _allgather(dependencies, [grad.values for grad in grads_to_gather])
+                if average:
+                    gathered_values = [tf.div(gathered_value, self.n_workers) for gathered_value in gathered_values]
                 new_grads.extend([
                     tf.IndexedSlices(
                         indices=indices, values=values, dense_shape=grad_to_gather.dense_shape
@@ -58,8 +59,10 @@ class DistributedOptimizer(tf.train.Optimizer):
                 ])
 
             if len(grads_to_reduce) > 0:
-                new_grads.extend([tf.div(reduced_grad, self.n_workers)
-                for reduced_grad in _allreduce(dependencies, grads_to_reduce)])
+                reduced_grads = _allreduce(dependencies, grads_to_reduce)
+                if average:
+                    reduced_grads = [tf.div(reduced_grad, self.n_workers) for reduced_grad in reduced_grads]
+                new_grads.extend(reduced_grads)
 
             return new_grads
 
