@@ -20,7 +20,7 @@ def model_fn(features, labels, mode, params):
     average_loss = tf.losses.sigmoid_cross_entropy(
         labels,
         logits,
-        reduction=tf.losses.Reduction.SUM
+        reduction=tf.losses.Reduction.MEAN
     )
 
     if mode == tf.estimator.ModeKeys.TRAIN:
