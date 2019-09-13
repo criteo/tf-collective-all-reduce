@@ -9,8 +9,8 @@ TF_LFLAGS := $(shell $(PYTHON_BIN_PATH) -c 'import tensorflow as tf; print(" ".j
 
 CFLAGS = ${TF_CFLAGS} -fPIC -O2 -std=c++11 -c -v
 LDFLAGS = -shared ${TF_LFLAGS}
-RABIT_OBJS = ../rabit/c_api.o ../rabit/allreduce_base.o ../rabit/allreduce_robust.o ../rabit/engine.o
-RABIT_PATH = -I..
+RABIT_OBJS = libs/rabit/c_api.o libs/rabit/allreduce_base.o libs/rabit/allreduce_robust.o libs/rabit/engine.o
+RABIT_PATH = -Ilibs
 
 COLLECTIVE_OPS_LIB = tf_collective_ops/python/ops/_collective_ops.so
 
