@@ -3,6 +3,7 @@ import numpy as np
 import os
 import argparse
 import tf_collective_ops as my_kernel
+from tensorflow.python.training.optimizer import _deduplicate_indexed_slices
 
 def main():
     parser = argparse.ArgumentParser()
@@ -41,7 +42,28 @@ def main():
         gather_res_np = sess.run(gather_res)
         print(gather_res_np)
         [np.testing.assert_array_equal(a, b) for a, b in zip(gather_res_np, expected_res)] 
-    
+   
+    is_to_gather = tf.IndexedSlices(
+        values=tf.constant([[1, 2, 3], [4, 5, 6]]),
+        indices=tf.constant([0, 3]),
+        dense_shape=tf.constant([6, 3])
+    )
+    gather_res = tf.IndexedSlices(
+        values=my_kernel.allgather([is_to_gather.values])[0],
+        indices=my_kernel.allgather([is_to_gather.indices])[0],
+        dense_shape=is_to_gather.dense_shape
+    )
+    expected_values = np.array([[1, 2, 3], [4, 5, 6], [1, 2, 3], [4, 5, 6]])
+    expected_indices = np.array([0, 3, 0, 3])
+    with tf.Session() as sess:
+        gather_res_np = sess.run(gather_res)
+        np.testing.assert_array_equal(expected_values, gather_res_np.values)
+        np.testing.assert_array_equal(expected_indices, gather_res_np.indices)
+        deduplicated_values, deduplicated_indices = sess.run(_deduplicate_indexed_slices(gather_res_np.values, gather_res_np.indices))
+        is_to_gather_np = sess.run(is_to_gather)
+        np.testing.assert_array_equal(deduplicated_values, is_to_gather_np.values * 2)
+        np.testing.assert_array_equal(deduplicated_indices, is_to_gather_np.indices )
+
     # Broadcast tests
 
     tensors_to_broadcast = [
