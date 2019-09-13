@@ -23,44 +23,45 @@ class DistributedOptimizer(tf.train.Optimizer):
         self._optimizer = optimizer
         self.n_workers = n_workers
 
-        def deduplicate_indexed_slices(values, indices):
-            unique_indices, new_index_positions = tf.unique(indices)
-            aggregated_values = tf.math.unsorted_segment_mean(
-                values, new_index_positions,
-                tf.shape(unique_indices)[0])
-            return (aggregated_values, unique_indices)
-        
-        def allreduce_grads(grads_vars):
-            grads_vars_to_gather = []
-            grads_vars_to_reduce = []
-            for grad_var in grads_vars:
-                if isinstance(grad_var[0], tf.IndexedSlices):
-                    grads_vars_to_gather.append(grad_var)
+        def allreduce_grads(grads):
+            def op_with_dependencies(dependencies, op, grads):
+                with tf.control_dependencies(dependencies):
+                    res = op(grads)
+                dependencies += res if isinstance(res, list) else list(res)
+                return res
+
+            def _allgather(dependencies, grads):
+                return op_with_dependencies(dependencies, allgather, grads)
+
+            def _allreduce(dependencies, grads):
+                return op_with_dependencies(dependencies, allreduce, grads)
+
+            dependencies = []
+            grads_to_gather = []
+            grads_to_reduce = []
+            for grad in grads:
+                if isinstance(grad, tf.IndexedSlices):
+                    grads_to_gather.append(grad)
                 else:
-                    grads_vars_to_reduce.append(grad_var)
+                    grads_to_reduce.append(grad)
 
-            new_grads_vars = []
+            new_grads = []
 
-            if len(grads_vars_to_gather) > 0:
-                grads_to_gather, vars = zip(*grads_vars_to_gather)
-                gathered_indices = allgather([grad.indices for grad in grads_to_gather])
-                gathered_values = allgather([grad.values for grad in grads_to_gather])
-                aggregated_grads = [deduplicate_indexed_slices(values, indices) for values, indices in zip(gathered_values, gathered_indices)]
-                gathered_grads = [
+            if len(grads_to_gather) > 0:
+                gathered_indices = _allgather(dependencies, [grad.indices for grad in grads_to_gather])
+                gathered_values = [tf.div(gathered_value, self.n_workers)
+                                   for gathered_value in _allgather(dependencies, [grad.values for grad in grads_to_gather])]
+                new_grads.extend([
                     tf.IndexedSlices(
                         indices=indices, values=values, dense_shape=grad_to_gather.dense_shape
-                    ) for grad_to_gather, (values, indices) in zip(grads_to_gather, aggregated_grads)
-                ]
-                new_grads_vars.extend(list(zip(gathered_grads, vars)))
+                    ) for grad_to_gather, values, indices in zip(grads_to_gather, gathered_values, gathered_indices)
+                ])
 
-            if len(grads_vars_to_reduce) > 0:
-                grads_to_reduce, vars = zip(*grads_vars_to_reduce)
-                reduced_grads = allreduce(grads_to_reduce)
-                n_workers = tf.cast(self.n_workers, dtype=reduced_grads[0].dtype)
-                reduced_grads = [tf.div(grad, n_workers) for grad in reduced_grads]
-                new_grads_vars.extend(list(zip(reduced_grads, vars)))
+            if len(grads_to_reduce) > 0:
+                new_grads.extend([tf.div(reduced_grad, self.n_workers)
+                for reduced_grad in _allreduce(dependencies, grads_to_reduce)])
 
-            return new_grads_vars
+            return new_grads
 
         self._allreduce_grads = allreduce_grads
 
@@ -77,8 +78,9 @@ class DistributedOptimizer(tf.train.Optimizer):
         """
         gradients = self._optimizer.compute_gradients(*args, **kwargs)
         if self.n_workers > 1:
-            avg_grads = self._allreduce_grads(gradients)
-            return avg_grads
+            grads, vars = zip(*gradients)
+            avg_grads = self._allreduce_grads(grads)
+            return list(zip(avg_grads, vars))
         else:
             return gradients
 
