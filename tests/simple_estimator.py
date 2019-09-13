@@ -74,7 +74,7 @@ def main():
             gen,
             (tf.int64, tf.int64, tf.float32)
         )
-        #dataset = dataset.batch(3)
+        dataset = dataset.batch(3)
         dataset = dataset.map(
             lambda x, y, z: {'partnerid': [x], 'campaignid': [y], label_name: [z]}
         )
@@ -83,7 +83,7 @@ def main():
         )
         return dataset
     
-    estimator.train(training_input_fn, steps=1, hooks=[BroadcastGlobalVariablesHook(0)])
+    estimator.train(training_input_fn, steps=1000, hooks=[BroadcastGlobalVariablesHook(0)])
 
 if __name__ == '__main__':
     main()
