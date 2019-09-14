@@ -2,6 +2,7 @@
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/platform/default/integral_types.h"
+#include <chrono> 
 
 #include "rabit/include/rabit/c_api.h"
 
@@ -22,6 +23,13 @@
 
 #define ALLREDUCE_SUM 2
 
+#define LOG_LEVEL WARNING
+
+#define _LOG(lvl, str) \
+    if (lvl >= LOG_LEVEL) \
+        LOG(lvl) << str
+
+using namespace std::chrono; 
 using namespace tensorflow;
 
 namespace thx {
@@ -70,9 +78,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    _LOG(INFO, std::string("Entering in allreduce op"));
     const int n_tensors = context->input(0).scalar<int>()();
-    //LOG(INFO) << "n_tensors: " << n_tensors;
     for (int i = 1; i <= n_tensors; i++) {
+        auto start = high_resolution_clock::now(); 
         const Tensor& input_tensor = context->input(i);
         Tensor* output_tensor = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(i-1, input_tensor.shape(),
@@ -86,13 +95,15 @@ public:
             output_flat(i) = input_flat(i);
         }
 
-        //LOG(INFO) << "Before allreduce (output_flat): " << output_flat;
         RabitAllreduce(
             (void *)(output_flat.data()), output_flat.size(),
             getTypeId<T>(), ALLREDUCE_SUM, nullptr, nullptr
         );
-        //LOG(INFO) << "After allreduce: " << output_flat;
+        auto stop = high_resolution_clock::now(); 
+        auto duration = duration_cast<microseconds>(stop - start);
+        _LOG(INFO, std::string("Time taken by function: ") << duration.count() << " microseconds");
     }
+    _LOG(INFO, std::string("Exiting allreduce op"));
   }
 };
 
@@ -114,10 +125,10 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+    _LOG(INFO, std::string("Entering in broadcast op"));
     auto cur_rank = RabitGetRank();
     auto sender_rank = context->input(0).scalar<int>()();
     auto n_tensors = context->input(1).scalar<int>()();
-    //LOG(INFO) << "n_tensors: " << n_tensors;
     for (int i = 0; i < n_tensors; i++) {
         auto input_tensor = context->input(i+2);
         Tensor* output_tensor = nullptr;
@@ -129,16 +140,15 @@ public:
         if (cur_rank == sender_rank) {
             context->set_output(i, input_tensor);
             RabitBroadcast((void *)(input_flat.data()), input_total_size, sender_rank);
-            //LOG(INFO) << "Broadcasted (sender): " << input_flat << std::endl;
         }
         else {
             OP_REQUIRES_OK(
             context, context->allocate_output(i, input_tensor.shape(), &output_tensor));
             auto output_flat = output_tensor->flat<T>();
             RabitBroadcast((void *)(output_flat.data()), input_total_size, sender_rank);
-            //LOG(INFO) << "Received: " << output_flat;
         }
     }
+    _LOG(INFO, std::string("Exiting broadcast op"));
   }
 };
 
@@ -160,18 +170,20 @@ public:
   }
 
   void Compute(OpKernelContext* context) override {
+      _LOG(INFO, std::string("Entering in allgather op"));
       const int n_tensors = context->input(0).scalar<int>()();
       for (int i = 1; i <= n_tensors; i++) {  
+        auto start = high_resolution_clock::now();
         const Tensor& input_tensor = context->input(i);
         auto input_shape = input_tensor.shape();
         auto input_flat = input_tensor.flat<T>();
 
         Tensor* output_tensor = NULL;
         
-        uint32 n_d0 = input_shape.dim_size(0);
+        int32 n_d0 = input_shape.dim_size(0);
         size_t nelems_per_slice = input_flat.size() / n_d0;
         
-        RabitAllreduce((void *)(&n_d0), 1, getTypeId<uint32>(), ALLREDUCE_SUM, nullptr, nullptr);
+        RabitAllreduce((void *)(&n_d0), 1, getTypeId<int32>(), ALLREDUCE_SUM, nullptr, nullptr);
 
         auto output_shape = TensorShape();
         output_shape.AppendShape(input_shape);
@@ -186,7 +198,11 @@ public:
         }
 
         RabitAllgather((void *)output_flat.data(), input_flat.size(), getTypeId<T>(), nelems_per_slice * n_d0);
-    }
+        auto stop = high_resolution_clock::now();
+        auto duration = duration_cast<microseconds>(stop - start);
+        _LOG(INFO, std::string("Time taken by function: ") << duration.count() << " microseconds");
+     }
+     _LOG(INFO, std::string("Exiting allgather op"));
   }
 };
 
