@@ -6,6 +6,15 @@
 ```
 
 
+# ReBuild
+
+Compiles sources and executes example below as healthcheck
+
+```
+./rebuild.sh
+
+```
+
 # Run locally
 
 Setup dmlc master
