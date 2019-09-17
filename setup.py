@@ -9,7 +9,7 @@ REQUIRED_PACKAGES = [
 
 
 setup(
-    name="tf-collective-ops",
+    name="tf_collective_ops",
     version="0.0.1",
     packages=find_packages(),
     install_requires=REQUIRED_PACKAGES,
