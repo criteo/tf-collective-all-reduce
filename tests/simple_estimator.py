@@ -3,8 +3,6 @@ import numpy as np
 import os
 import argparse
 from tf_collective_ops import DistributedOptimizer, broadcast, allreduce, BroadcastGlobalVariablesHook
-from thx.hadoop import hdfs_cache as hdfs
-from thx.tf_feature_transfo import preprocessing
 
 
 def model_fn(features, labels, mode, params):
@@ -83,7 +81,7 @@ def main():
         )
         return dataset
     
-    estimator.train(training_input_fn, steps=1000, hooks=[BroadcastGlobalVariablesHook(0)])
+    estimator.train(training_input_fn, steps=10, hooks=[BroadcastGlobalVariablesHook(0)])
 
 if __name__ == '__main__':
     main()
