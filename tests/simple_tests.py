@@ -21,12 +21,13 @@ def main():
     print(f'Rank: {args.rank}')
     
     # AllGather tests
-    
+
     tensors_to_gather = [
         tf.constant([13]),
         tf.constant([[1, 2, 3]]),
         tf.constant([[[13]]]),
-        tf.constant([[[[1], [2]], [[3], [4]]]])
+        tf.constant([[[[1], [2]], [[3], [4]]]]),
+        tf.range(start=0, limit=50000, dtype=tf.int32)
     ]
 
     expected_res = [
@@ -34,6 +35,7 @@ def main():
         np.array([[1, 2, 3], [1, 2, 3]]),
         np.array([[[13]], [[13]]]),
         np.array([[[[1], [2]], [[3], [4]]], [[[1], [2]], [[3], [4]]]]),
+        np.concatenate((np.arange(50000), np.arange(50000)))
     ]
 
     gather_res = my_kernel.allgather(tensors_to_gather)
@@ -106,7 +108,8 @@ def main():
         tf.constant([4.]),
         tf.constant([[1., 2., 3.]]),
         tf.constant([[4.], [5.]]),
-        tf.constant([[[6., 7.], [8., 9.], [10., 11.]]])
+        tf.constant([[[6., 7.], [8., 9.], [10., 11.]]]),
+        tf.range(start=0, limit=100000, dtype=tf.float32)
     ]
     allreduce_res = my_kernel.allreduce(tensors_to_reduce)
 
