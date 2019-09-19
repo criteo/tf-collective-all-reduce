@@ -2,7 +2,12 @@ import tensorflow as tf
 import numpy as np
 import os
 import argparse
-from tf_collective_ops import DistributedOptimizer, broadcast, allreduce, BroadcastGlobalVariablesHook
+from tf_collective_ops import (
+    DistributedOptimizer, 
+    BroadcastGlobalVariablesHook
+)
+
+tf.logging.set_verbosity(tf.logging.INFO)
 
 
 def model_fn(features, labels, mode, params):
