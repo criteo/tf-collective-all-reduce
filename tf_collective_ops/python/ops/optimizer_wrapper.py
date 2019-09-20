@@ -23,27 +23,28 @@ class DistributedOptimizer(tf.train.Optimizer):
         self._optimizer = optimizer
         self.n_workers = n_workers
         self.average = average
+        self.dependencies = []
 
         super(DistributedOptimizer, self).__init__(
             name="DistributedOptimizer", use_locking=use_locking)
 
-    def _op_with_dependencies(self, dependencies, op, grads):
-        with tf.control_dependencies(dependencies):
-            res = op(grads)
-        dependencies += res if isinstance(res, list) else [res]
+    def _op_with_dependencies(self, op, grad):
+        with tf.control_dependencies(self.dependencies):
+            res = op(grad)
+        self.dependencies += res if isinstance(res, list) else [res]
         return res
 
-    def _allreduce_grad(self, dependencies, tensor):
+    def _allgather(self, grad):
+        return self._op_with_dependencies(allgather, grad)
+
+    def _allreduce(self, grad):
+        return self._op_with_dependencies(allreduce, grad)
+
+    def _allreduce_grad(self, tensor):
         n_workers = tf.cast(self.n_workers, dtype=tensor.dtype)
         if isinstance(tensor, tf.IndexedSlices):
-            values = self._op_with_dependencies(
-                dependencies,
-                allgather,
-                [tensor.values])[0]
-            indices = self._op_with_dependencies(
-                dependencies,
-                allgather,
-                [tensor.indices])[0]
+            values = self._allgather([tensor.values])[0]
+            indices = self._allgather([tensor.indices])[0]
             if self.average:
                 values = tf.div(values, n_workers)
             return tf.IndexedSlices(
@@ -51,19 +52,14 @@ class DistributedOptimizer(tf.train.Optimizer):
                 values=values,
                 dense_shape=tensor.dense_shape)
         else:
-            summed_tensor = self._op_with_dependencies(dependencies, allreduce, [tensor])[0]
+            summed_tensor = self._allreduce([tensor])[0]
             if self.average:
                 summed_tensor = tf.div(summed_tensor, n_workers)
             return summed_tensor
 
-    def _allreduce_grads(self, grads_vars):
-            tf.logging.info("Creating allreduce grad ops")
-            ops = []
-            dependencies = []
-            for grad in grads_vars:
-                allred_op = self._allreduce_grad(dependencies, grad)
-                ops.append(allred_op)
-            return ops
+    def _allreduce_grads(self, grads):
+        tf.logging.info("Creating allreduce grad ops")
+        return [self._allreduce_grad(grad) for grad in grads]
 
     def compute_gradients(self, *args, **kwargs):
         """Compute gradients of all trainable variables.
@@ -76,8 +72,8 @@ class DistributedOptimizer(tf.train.Optimizer):
         gradients = self._optimizer.compute_gradients(*args, **kwargs)
         if self.n_workers > 1:
             grads, vars = zip(*gradients)
-            avg_grads = self._allreduce_grads(grads)
-            return list(zip(avg_grads, vars))
+            agg_grads = self._allreduce_grads(grads)
+            return list(zip(agg_grads, vars))
         else:
             return gradients
 
