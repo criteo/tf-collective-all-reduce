@@ -27,6 +27,3 @@ class BroadcastGlobalVariablesHook(tf.train.SessionRunHook):
 
     def after_create_session(self, session, coord):
         session.run(self.bcast_op)
-        var = tf.global_variables()
-        for e in var:
-            print(f"Tensor {e.name}: {session.run(e)}")
