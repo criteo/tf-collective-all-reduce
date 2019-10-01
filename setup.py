@@ -9,7 +9,7 @@ REQUIRED_PACKAGES = [
 
 
 setup(
-    name="tf_collective_ops",
+    name="tf_collective_all_reduce",
     version="0.0.1",
     packages=find_packages(),
     install_requires=REQUIRED_PACKAGES,

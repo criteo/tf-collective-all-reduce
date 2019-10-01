@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import argparse
-import tf_collective_ops as my_kernel
+import tf_collective_all_reduce as my_kernel
 from tensorflow.python.training.optimizer import _deduplicate_indexed_slices
 
 def main():

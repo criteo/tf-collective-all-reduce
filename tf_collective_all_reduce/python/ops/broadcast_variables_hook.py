@@ -1,5 +1,5 @@
-from tf_collective_ops import broadcast
 import tensorflow as tf
+from tf_collective_all_reduce import broadcast
 
 
 def broadcast_global_variables(root_rank):

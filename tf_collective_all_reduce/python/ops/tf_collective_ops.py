@@ -4,7 +4,7 @@ from tensorflow.python.platform import resource_loader
 
 
 tf_collective_ops = load_library.load_op_library(
-    resource_loader.get_path_to_datafile('_collective_ops.so'))
+    resource_loader.get_path_to_datafile('_tf_collective_all_reduce.so'))
 
 def allgather(tensors):
     return tf_collective_ops.allgather(tf.convert_to_tensor(len(tensors), dtype=tf.uint32), tensors)

@@ -51,7 +51,7 @@ function main() {
 
   cp ${PIP_FILE_PREFIX}setup.py "${TMPDIR}"
   cp ${PIP_FILE_PREFIX}MANIFEST.in "${TMPDIR}"
-  rsync -avm -L --exclude='*_test.py' ${PIP_FILE_PREFIX}tf_collective_ops "${TMPDIR}"
+  rsync -avm -L --exclude='*_test.py' ${PIP_FILE_PREFIX}tf_collective_all_reduce "${TMPDIR}"
 
   pushd ${TMPDIR}
   echo $(date) : "=== Building wheel"

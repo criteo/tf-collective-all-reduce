@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import argparse
-from tf_collective_ops import (
+from tf_collective_all_reduce import (
     DistributedOptimizer, 
     BroadcastGlobalVariablesHook
 )

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tf_collective_ops import allreduce, allgather
+from tf_collective_all_reduce import allreduce, allgather
 
 
 class DistributedOptimizer(tf.train.Optimizer):
