@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tf_collective_all_reduce import allreduce, allgather
+from collections import defaultdict
 
 
 class DistributedOptimizer(tf.train.Optimizer):
@@ -19,6 +20,10 @@ class DistributedOptimizer(tf.train.Optimizer):
           use_locking:
             Whether to use locking when updating variables.
             See Optimizer.__init__ for more info.
+          average:
+            Whether to compute the average of reduced gradients.
+            If the loss to optimize is an average, this parameter must be set to True
+            Otherwise, it is most likely that it should be set to False
         """
         self._optimizer = optimizer
         self.n_workers = n_workers
@@ -40,26 +45,50 @@ class DistributedOptimizer(tf.train.Optimizer):
     def _allreduce(self, grad):
         return self._op_with_dependencies(allreduce, grad)
 
-    def _allreduce_grad(self, tensor):
-        n_workers = tf.cast(self.n_workers, dtype=tensor.dtype)
-        if isinstance(tensor, tf.IndexedSlices):
-            values = self._allgather([tensor.values])[0]
-            indices = self._allgather([tensor.indices])[0]
-            if self.average:
-                values = tf.div(values, n_workers)
-            return tf.IndexedSlices(
-                indices=indices,
-                values=values,
-                dense_shape=tensor.dense_shape)
-        else:
-            summed_tensor = self._allreduce([tensor])[0]
-            if self.average:
-                summed_tensor = tf.div(summed_tensor, n_workers)
-            return summed_tensor
+    def _allreduce_grads(self, grads_vars):
+        tf.logging.info(f"Creating allreduce ops for {grads_vars}")
+        grads_vars_to_gather = defaultdict(list)
+        grads_vars_to_reduce = defaultdict(list)
+        for grad, var in grads_vars:
+            if isinstance(grad, tf.IndexedSlices):
+                grads_vars_to_gather[(grad.dtype, grad.indices.dtype)].append((grad, var))
+            else:
+                grads_vars_to_reduce[grad.dtype].append((grad, var))
 
-    def _allreduce_grads(self, grads):
-        tf.logging.info("Creating allreduce grad ops")
-        return [self._allreduce_grad(grad) for grad in grads]
+        new_grads_vars = []
+
+        if len(grads_vars_to_gather) > 0:
+            for grads_vars in grads_vars_to_gather.values():
+                grads, _ = zip(*grads_vars)
+                gathered_indices = self._allgather([grad.indices for grad in grads])
+                gathered_values = self._allgather([grad.values for grad in grads])
+                if self.average:
+                    gathered_values = [tf.div(gathered_value, self.n_workers)
+                                       for gathered_value in gathered_values]
+                new_grads_vars.extend([
+                    (
+                        tf.IndexedSlices(
+                            indices=indices, values=values, dense_shape=grad.dense_shape
+                        ),
+                        var
+                    )
+                    for (grad, var), values, indices
+                    in zip(grads_vars, gathered_values, gathered_indices)
+                ])
+
+        if len(grads_vars_to_reduce) > 0:
+            for grads_vars in grads_vars_to_reduce.values():
+                grads, _ = zip(*grads_vars)
+                reduced_grads = self._allreduce(grads)
+                if self.average:
+                    reduced_grads = [
+                        tf.div(reduced_grad, self.n_workers) for reduced_grad in reduced_grads
+                    ]
+                new_grads_vars.extend([
+                    (reduced_grad, var) for (_, var), reduced_grad in zip(grads_vars, reduced_grads)
+                ])
+
+        return new_grads_vars
 
     def compute_gradients(self, *args, **kwargs):
         """Compute gradients of all trainable variables.
@@ -69,13 +98,11 @@ class DistributedOptimizer(tf.train.Optimizer):
         In DistributedOptimizer, compute_gradients() is overriden to also
         allreduce the gradients before returning them.
         """
-        gradients = self._optimizer.compute_gradients(*args, **kwargs)
+        grads_vars = self._optimizer.compute_gradients(*args, **kwargs)
         if self.n_workers > 1:
-            grads, vars = zip(*gradients)
-            agg_grads = self._allreduce_grads(grads)
-            return list(zip(agg_grads, vars))
+            return self._allreduce_grads(grads_vars)
         else:
-            return gradients
+            return grads_vars
 
     def apply_gradients(self, *args, **kwargs):
         """Calls this same method on the underlying optimizer."""
