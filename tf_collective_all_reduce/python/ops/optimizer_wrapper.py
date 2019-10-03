@@ -1,11 +1,17 @@
 import tensorflow as tf
 from tf_collective_all_reduce import allreduce, allgather
 from collections import defaultdict
+from tf_collective_all_reduce.python.ops import Compression
 
 
 class DistributedOptimizer(tf.train.Optimizer):
 
-    def __init__(self, optimizer, n_workers, name=None, use_locking=False, average=True):
+    def __init__(
+            self, optimizer, n_workers, name=None,
+            use_locking=False, average=True,
+            indices_compression=Compression.none,
+            values_compression=Compression.none
+    ):
         """Construct a new DistributedOptimizer, which uses another optimizer
         under the hood for computing single-process gradient values and
         applying gradient updates after the gradient values have been averaged
@@ -24,26 +30,40 @@ class DistributedOptimizer(tf.train.Optimizer):
             Whether to compute the average of reduced gradients.
             If the loss to optimize is an average, this parameter must be set to True
             Otherwise, it is most likely that it should be set to False
+          indices_compression:
+            Compression algorithm to apply on IndexedSlices indices.
+            Indices of IndexedSlices are mostly int64. Most of the time, the range
+            of indices can be coded with less than 64 bits.
+          values_compression:
+            Compression algorithm to apply on gradient values
         """
         self._optimizer = optimizer
         self.n_workers = n_workers
         self.average = average
+        self.indices_compression = indices_compression
+        self.values_compression = values_compression
         self.dependencies = []
 
         super(DistributedOptimizer, self).__init__(
             name="DistributedOptimizer", use_locking=use_locking)
 
-    def _op_with_dependencies(self, op, grad):
+    def _op_with_dependencies(self, op, tensors, compression=Compression.none):
         with tf.control_dependencies(self.dependencies):
-            res = op(grad)
-        self.dependencies += res if isinstance(res, list) else [res]
-        return res
+            compressed_tensors, dtypes = zip(*[compression.compress(tensor) for tensor in tensors])
+            results = op(compressed_tensors)
+            decompressed_tensors = [
+                compression.decompress(result, dtype) for result, dtype in zip(results, dtypes)
+            ]
+        self.dependencies += \
+            decompressed_tensors if isinstance(decompressed_tensors, list) \
+            else [decompressed_tensors]
+        return decompressed_tensors
 
-    def _allgather(self, grad):
-        return self._op_with_dependencies(allgather, grad)
+    def _allgather(self, tensors, compression=Compression.none):
+        return self._op_with_dependencies(allgather, tensors, compression)
 
-    def _allreduce(self, grad):
-        return self._op_with_dependencies(allreduce, grad)
+    def _allreduce(self, tensors, compression=Compression.none):
+        return self._op_with_dependencies(allreduce, tensors, compression)
 
     def _allreduce_grads(self, grads_vars):
         tf.logging.info(f"Creating allreduce ops for {grads_vars}")
@@ -60,11 +80,13 @@ class DistributedOptimizer(tf.train.Optimizer):
         if len(grads_vars_to_gather) > 0:
             for grads_vars in grads_vars_to_gather.values():
                 grads, _ = zip(*grads_vars)
-                gathered_indices = self._allgather([grad.indices for grad in grads])
-                gathered_values = self._allgather([grad.values for grad in grads])
+                gathered_indices = \
+                    self._allgather([grad.indices for grad in grads], self.indices_compression)
+                gathered_values = \
+                    self._allgather([grad.values for grad in grads], self.values_compression)
                 if self.average:
-                    gathered_values = [tf.div(gathered_value, self.n_workers)
-                                       for gathered_value in gathered_values]
+                    gathered_values = [tf.div(value, self.n_workers)
+                                       for value in gathered_values]
                 new_grads_vars.extend([
                     (
                         tf.IndexedSlices(
@@ -78,15 +100,13 @@ class DistributedOptimizer(tf.train.Optimizer):
 
         if len(grads_vars_to_reduce) > 0:
             for grads_vars in grads_vars_to_reduce.values():
-                grads, _ = zip(*grads_vars)
-                reduced_grads = self._allreduce(grads)
+                grads, vars = zip(*grads_vars)
+                reduced_grads = self._allreduce(grads, self.values_compression)
                 if self.average:
                     reduced_grads = [
-                        tf.div(reduced_grad, self.n_workers) for reduced_grad in reduced_grads
+                        tf.div(grad, self.n_workers) for grad in reduced_grads
                     ]
-                new_grads_vars.extend([
-                    (reduced_grad, var) for (_, var), reduced_grad in zip(grads_vars, reduced_grads)
-                ])
+                new_grads_vars.extend(zip(reduced_grads, vars))
 
         return new_grads_vars
 
