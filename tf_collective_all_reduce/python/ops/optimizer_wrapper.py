@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tf_collective_all_reduce import allreduce, allgather
 from collections import defaultdict
-from tf_collective_all_reduce.python.ops import Compression
+from tf_collective_all_reduce.python.ops.compression import Compression
 
 
 class DistributedOptimizer(tf.train.Optimizer):
