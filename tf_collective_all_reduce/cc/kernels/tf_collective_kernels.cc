@@ -2,7 +2,9 @@
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/platform/default/integral_types.h"
-#include <chrono> 
+#include <chrono>
+
+#include <numeric>
 
 #include "rabit/include/rabit/c_api.h"
 
@@ -23,13 +25,15 @@
 
 #define ALLREDUCE_SUM 2
 
+#define RABIT_ENUM_SIZE_T 10
+
 #define LOG_LEVEL WARNING
 
 #define _LOG(lvl, str) \
     if (lvl >= LOG_LEVEL) \
         LOG(lvl) << str
 
-using namespace std::chrono; 
+using namespace std::chrono;
 using namespace tensorflow;
 
 namespace thx {
@@ -172,32 +176,39 @@ public:
   void Compute(OpKernelContext* context) override {
       _LOG(INFO, std::string("Entering in allgather op"));
       const int n_tensors = context->input(0).scalar<int>()();
-      for (int i = 1; i <= n_tensors; i++) {  
+      for (int i = 1; i <= n_tensors; i++) {
         auto start = high_resolution_clock::now();
         const Tensor& input_tensor = context->input(i);
         auto input_shape = input_tensor.shape();
         auto input_flat = input_tensor.flat<T>();
 
         Tensor* output_tensor = NULL;
-        
-        int32 n_d0 = input_shape.dim_size(0);
-        size_t nelems_per_slice = input_flat.size() / n_d0;
-        
-        RabitAllreduce((void *)(&n_d0), 1, getTypeId<int32>(), ALLREDUCE_SUM, nullptr, nullptr);
+
+        int n_workers = RabitGetWorldSize();
+        int rank = RabitGetRank();
+        int ringPrevRank = RabitGetRingPrevRank();
+        size_t n_slicesPerWorker[n_workers];
+        n_slicesPerWorker[rank] = input_shape.dim_size(0);
+        RabitAllgatherRing((void*)(n_slicesPerWorker), n_workers, rank, 1, 1, RABIT_ENUM_SIZE_T);
+
+        size_t n_slicesBefore = std::accumulate(n_slicesPerWorker, n_slicesPerWorker + rank, 0, std::plus<size_t>());
+        size_t n_slices = n_slicesBefore + std::accumulate(n_slicesPerWorker + rank, n_slicesPerWorker + n_workers, 0, std::plus<size_t>());
 
         auto output_shape = TensorShape();
         output_shape.AppendShape(input_shape);
-        output_shape.set_dim(0, n_d0);
+        output_shape.set_dim(0, n_slices);
         OP_REQUIRES_OK(context, context->allocate_output(i-1, output_shape,
                                                      &output_tensor));
 
+        size_t n_elemsPerSlice = input_flat.size() / n_slicesPerWorker[rank];
         auto output_flat = output_tensor->flat<T>();
-
+        size_t beginIndex = n_slicesBefore * n_elemsPerSlice;
         for (int j = 0; j < input_flat.size(); j++) {
-            output_flat(j) = input_flat(j);
+            output_flat(beginIndex + j) = input_flat(j);
         }
 
-        RabitAllgather((void *)output_flat.data(), input_flat.size(), getTypeId<T>(), nelems_per_slice * n_d0);
+        RabitAllgatherRing((void *)output_flat.data(), n_elemsPerSlice * n_slices, beginIndex, input_flat.size(),
+                n_slicesPerWorker[ringPrevRank] * n_elemsPerSlice, getTypeId<T>());
         auto stop = high_resolution_clock::now();
         auto duration = duration_cast<microseconds>(stop - start);
         _LOG(INFO, std::string("Time taken by function: ") << duration.count() << " microseconds");
