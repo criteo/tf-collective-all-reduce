@@ -1,6 +1,10 @@
+
 import tensorflow as tf
-from tf_collective_all_reduce import allreduce, allgather
+
 from collections import defaultdict
+from tensorflow.python.training import optimizer as opt
+
+from tf_collective_all_reduce import allreduce, allgather
 from tf_collective_all_reduce.python.ops.compression import Compression
 
 
@@ -80,6 +84,11 @@ class DistributedOptimizer(tf.train.Optimizer):
         if len(grads_vars_to_gather) > 0:
             for grads_vars in grads_vars_to_gather.values():
                 grads, _ = zip(*grads_vars)
+                grads = [self._create_deduplicated_indexed_slices(
+                            grad.indices,
+                            grad.values,
+                            grad.dense_shape)
+                         for grad in grads]
                 gathered_indices = \
                     self._allgather([grad.indices for grad in grads], self.indices_compression)
                 gathered_values = \
@@ -109,6 +118,14 @@ class DistributedOptimizer(tf.train.Optimizer):
                 new_grads_vars.extend(zip(reduced_grads, vars))
 
         return new_grads_vars
+
+    def _create_deduplicated_indexed_slices(self, indices, values, dense_shape):
+        values, indices = opt._deduplicate_indexed_slices(values, indices)
+        return tf.IndexedSlices(
+            indices=indices,
+            values=values,
+            dense_shape=dense_shape
+        )
 
     def compute_gradients(self, *args, **kwargs):
         """Compute gradients of all trainable variables.
