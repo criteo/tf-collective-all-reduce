@@ -1,0 +1,7 @@
+coverage
+matplotlib
+mypy
+pylama
+pytest
+pytest-mock
+tox

@@ -3,7 +3,7 @@ import numpy as np
 import os
 import argparse
 from tf_collective_all_reduce import (
-    DistributedOptimizer, 
+    DistributedOptimizer,
     BroadcastGlobalVariablesHook
 )
 
@@ -17,8 +17,6 @@ def model_fn(features, labels, mode, params):
         features,
         feature_columns
     )
-
-    predictions = tf.sigmoid(logits)
 
     average_loss = tf.losses.sigmoid_cross_entropy(
         labels,
@@ -46,22 +44,20 @@ def main():
     os.environ['DMLC_RANK'] = args.rank
 
     label_name = 'weighted_credited_sales_count_same_device'
-    feature_names = ['partnerid', 'campaignid']
 
-    config = tf.ConfigProto(
-        intra_op_parallelism_threads=1, 
-        inter_op_parallelism_threads=1
-    )
-    
     estimator = tf.estimator.Estimator(
         model_fn, model_dir="model_dir",
-        config=tf.estimator.RunConfig(
-            session_config=config
-        ),
+        config=tf.estimator.RunConfig(),
         params={
             "feature_columns": lambda: [
-                tf.feature_column.categorical_column_with_hash_bucket("partnerid", 13, dtype=tf.int64),
-                tf.feature_column.categorical_column_with_hash_bucket("campaignid", 3, dtype=tf.int64)
+                tf.feature_column.categorical_column_with_hash_bucket(
+                    "partnerid",
+                    13,
+                    dtype=tf.int64),
+                tf.feature_column.categorical_column_with_hash_bucket(
+                    "campaignid",
+                    3,
+                    dtype=tf.int64)
             ]
         }
     )
@@ -85,8 +81,9 @@ def main():
             lambda x: (x, x.pop(label_name))
         )
         return dataset
-    
+
     estimator.train(training_input_fn, steps=10, hooks=[BroadcastGlobalVariablesHook(0)])
+
 
 if __name__ == '__main__':
     main()
