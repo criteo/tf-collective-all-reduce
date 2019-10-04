@@ -5,6 +5,7 @@ import argparse
 import tf_collective_all_reduce as my_kernel
 from tensorflow.python.training.optimizer import _deduplicate_indexed_slices
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ip', type=str)
@@ -12,6 +13,7 @@ def main():
     parser.add_argument('--rank', type=str)
     parser.add_argument('--nworkers', type=int)
     args = parser.parse_args()
+    n_workers = int(args.nworkers)
 
     os.environ['DMLC_ROLE'] = "worker"
     os.environ['DMLC_TRACKER_URI'] = args.ip
@@ -19,35 +21,34 @@ def main():
     os.environ['DMLC_RANK'] = args.rank
 
     print(f'Rank: {args.rank}')
-    
+
     # AllGather tests
 
-    tensors_to_gather = [
-        tf.constant([13]),
-        tf.constant([[1, 2, 3]]),
-        tf.constant([[[13]]]),
-        tf.constant([[[[1], [2]], [[3], [4]]]]),
-        tf.range(start=0, limit=500000, dtype=tf.int32)
+    arrays_to_gather = [
+        np.array([13]),
+        np.array([[1, 2, 3]]),
+        np.array([[[13]]]),
+        np.array([[[[1], [2]], [[3], [4]]]])
     ]
 
+    tensors_to_gather = [tf.constant(arr, dtype=tf.int32) for arr in arrays_to_gather] \
+        + [tf.range(start=0, limit=500000, dtype=tf.int32)]
+
     expected_res = [
-        np.array([13, 13]),
-        np.array([[1, 2, 3], [1, 2, 3]]),
-        np.array([[[13]], [[13]]]),
-        np.array([[[[1], [2]], [[3], [4]]], [[[1], [2]], [[3], [4]]]]),
-        np.concatenate((np.arange(500000), np.arange(500000)))
-    ]
+        np.repeat(arr, int(args.nworkers), axis=0) for arr in arrays_to_gather
+    ] + [np.tile(np.arange(500000), int(args.nworkers))]
 
     gather_res = my_kernel.allgather(tensors_to_gather)
 
     with tf.Session() as sess:
         gather_res_np = sess.run(gather_res)
-        print(gather_res_np)
-        [np.testing.assert_array_equal(a, b) for a, b in zip(gather_res_np, expected_res)] 
-   
+        [np.testing.assert_array_equal(a, b) for a, b in zip(gather_res_np, expected_res)]
+
+    is_values = np.array([[1, 2, 3], [4, 5, 6]])
+    is_indices = np.array([0, 3])
     is_to_gather = tf.IndexedSlices(
-        values=tf.constant([[1, 2, 3], [4, 5, 6]]),
-        indices=tf.constant([0, 3]),
+        values=tf.constant(is_values),
+        indices=tf.constant(is_indices),
         dense_shape=tf.constant([6, 3])
     )
     gather_res = tf.IndexedSlices(
@@ -55,16 +56,17 @@ def main():
         indices=my_kernel.allgather([is_to_gather.indices])[0],
         dense_shape=is_to_gather.dense_shape
     )
-    expected_values = np.array([[1, 2, 3], [4, 5, 6], [1, 2, 3], [4, 5, 6]])
-    expected_indices = np.array([0, 3, 0, 3])
+    expected_values = np.concatenate([is_values for _ in range(n_workers)])
+    expected_indices = np.tile(is_indices, n_workers)
     with tf.Session() as sess:
         gather_res_np = sess.run(gather_res)
         np.testing.assert_array_equal(expected_values, gather_res_np.values)
         np.testing.assert_array_equal(expected_indices, gather_res_np.indices)
-        deduplicated_values, deduplicated_indices = sess.run(_deduplicate_indexed_slices(gather_res_np.values, gather_res_np.indices))
+        deduplicated_values, deduplicated_indices = \
+            sess.run(_deduplicate_indexed_slices(gather_res_np.values, gather_res_np.indices))
         is_to_gather_np = sess.run(is_to_gather)
-        np.testing.assert_array_equal(deduplicated_values, is_to_gather_np.values * 2)
-        np.testing.assert_array_equal(deduplicated_indices, is_to_gather_np.indices )
+        np.testing.assert_array_equal(deduplicated_values, is_to_gather_np.values * n_workers)
+        np.testing.assert_array_equal(deduplicated_indices, is_to_gather_np.indices)
 
     # Broadcast tests
 
@@ -74,18 +76,18 @@ def main():
         tf.constant(13),
         tf.constant([[[1], [2]], [[3], [4]]])
     ]
-    
+
     broadcast_res = my_kernel.broadcast(
         0,
-        tensors_to_broadcast if args.rank == "0" \
+        tensors_to_broadcast if args.rank == "0"
         else [tf.zeros_like(tensor) for tensor in tensors_to_broadcast]
     )
-    
+
     with tf.Session() as sess:
         broadcast_res_np = sess.run(broadcast_res)
         tensors_to_broadcast_np = sess.run(tensors_to_broadcast)
-        print(broadcast_res_np)
-        [np.testing.assert_array_equal(a, b) for a, b in zip(broadcast_res_np, tensors_to_broadcast_np)]
+        [np.testing.assert_array_equal(a, b) for a, b in
+         zip(broadcast_res_np, tensors_to_broadcast_np)]
 
     # AllReduce tests
 
@@ -100,8 +102,8 @@ def main():
     with tf.Session() as sess:
         allreduce_res_np = sess.run(allreduce_res)
         tensors_to_reduce_np = sess.run(tensors_to_reduce)
-        print(allreduce_res_np)
-        [np.testing.assert_array_equal(a, b * args.nworkers) for a, b in zip(allreduce_res_np, tensors_to_reduce_np)]
+        [np.testing.assert_array_equal(a, b * n_workers) for a, b in
+         zip(allreduce_res_np, tensors_to_reduce_np)]
 
     tensors_to_reduce = [
         tf.constant(13.),
@@ -116,10 +118,11 @@ def main():
     with tf.Session() as sess:
         allreduce_res_np = sess.run(allreduce_res)
         tensors_to_reduce_np = sess.run(tensors_to_reduce)
-        print(allreduce_res_np)
-        [np.testing.assert_array_equal(a, b * args.nworkers) for a, b in zip(allreduce_res_np, tensors_to_reduce_np)]
+        [np.testing.assert_array_equal(a, b * n_workers) for a, b in
+         zip(allreduce_res_np, tensors_to_reduce_np)]
 
     print("Everything's OK!")
+
 
 if __name__ == '__main__':
     main()
