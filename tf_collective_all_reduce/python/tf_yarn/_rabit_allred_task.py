@@ -6,6 +6,7 @@ from threading import Thread
 
 from tf_yarn import _task_commons, cluster, event
 from tf_collective_all_reduce.python.tf_yarn import tracker
+from tf_collective_all_reduce.python.ops import rabit
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,8 @@ def main():
         _start_tracker(client, len(cluster_tasks))
 
     _setup_tracker(client)
+
+    rabit.init()
 
     experiment = _task_commons._get_experiment(client)
 

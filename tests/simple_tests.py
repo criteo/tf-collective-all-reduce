@@ -3,6 +3,7 @@ import numpy as np
 import os
 import argparse
 import tf_collective_all_reduce as my_kernel
+from tf_collective_all_reduce.python.ops import rabit
 from tensorflow.python.training.optimizer import _deduplicate_indexed_slices
 
 
@@ -21,6 +22,8 @@ def main():
     os.environ['DMLC_RANK'] = args.rank
 
     print(f'Rank: {args.rank}')
+
+    rabit.init()
 
     # AllGather tests
 

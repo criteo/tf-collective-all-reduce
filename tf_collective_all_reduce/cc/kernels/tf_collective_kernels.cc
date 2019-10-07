@@ -62,23 +62,11 @@ int getTypeId() {
     return typeId;
 }
 
-void initRabit() {
-    static bool isInitialized = false;
-    if (!isInitialized) {
-        LOG(INFO) << "Initializing Rabit";
-        RabitInit(0, nullptr);
-        LOG(INFO) << "Rabit is initialized";
-        LOG(INFO) << "Rank: " << RabitGetRank();
-        isInitialized = true;
-    }
-}
-
 template <typename T>
 class AllreduceOp : public OpKernel {
 public:
   explicit AllreduceOp(OpKernelConstruction* context)
       : OpKernel(context) {
-    initRabit();
   }
 
   void Compute(OpKernelContext* context) override {
@@ -125,7 +113,6 @@ class BroadcastOp : public OpKernel {
 public:
   explicit BroadcastOp(OpKernelConstruction* context)
       : OpKernel(context) {
-    initRabit();    
   }
 
   void Compute(OpKernelContext* context) override {
@@ -170,7 +157,6 @@ class AllgatherOp : public OpKernel {
 public:
   explicit AllgatherOp(OpKernelConstruction* context)
       : OpKernel(context) {
-    initRabit();
   }
 
   void Compute(OpKernelContext* context) override {

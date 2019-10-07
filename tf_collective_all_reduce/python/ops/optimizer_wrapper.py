@@ -5,13 +5,14 @@ from collections import defaultdict
 from tensorflow.python.training import optimizer as opt
 
 from tf_collective_all_reduce import allreduce, allgather
+from tf_collective_all_reduce.python.ops import rabit
 from tf_collective_all_reduce.python.ops.compression import Compression
 
 
 class DistributedOptimizer(tf.train.Optimizer):
 
     def __init__(
-            self, optimizer, n_workers, name=None,
+            self, optimizer, name=None,
             use_locking=False, average=True,
             indices_compression=Compression.none,
             values_compression=Compression.none,
@@ -47,7 +48,8 @@ class DistributedOptimizer(tf.train.Optimizer):
             faster but consumes more memory
         """
         self._optimizer = optimizer
-        self.n_workers = n_workers
+        self.n_workers = rabit.get_world_size()
+        tf.logging.info(f"Rabit world_size {self.n_workers}")
         self.average = average
         self.indices_compression = indices_compression
         self.values_compression = values_compression

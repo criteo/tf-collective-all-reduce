@@ -1,5 +1,5 @@
 """
-Example of custom distributed training with one node training
+Example of custom distributed training with one node trainings
 and using https://gitlab.criteois.com/g.racic/rabit-fork AllReduce
 """
 import logging
@@ -49,7 +49,7 @@ def experiment_fn() -> Experiment:
                 .repeat())
 
     estimator = tf.estimator.LinearClassifier(
-        optimizer=DistributedOptimizer(tf.train.FtrlOptimizer(learning_rate=0.1), NB_WORKERS+1),
+        optimizer=DistributedOptimizer(tf.train.FtrlOptimizer(learning_rate=0.1)),
         feature_columns=winequality.get_feature_columns(),
         model_dir=f"{HDFS_DIR}",
         n_classes=winequality.get_n_classes())

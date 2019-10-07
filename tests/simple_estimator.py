@@ -7,6 +7,8 @@ from tf_collective_all_reduce import (
     BroadcastGlobalVariablesHook
 )
 
+from tf_collective_all_reduce.python.ops import rabit
+
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
@@ -25,7 +27,7 @@ def model_fn(features, labels, mode, params):
     )
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = DistributedOptimizer(tf.train.FtrlOptimizer(learning_rate=0.1), 2)
+        optimizer = DistributedOptimizer(tf.train.FtrlOptimizer(learning_rate=0.1))
         train_op = optimizer.minimize(loss=average_loss, global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(
             mode=mode, loss=average_loss, train_op=train_op)
@@ -42,6 +44,10 @@ def main():
     os.environ['DMLC_TRACKER_URI'] = args.ip
     os.environ['DMLC_TRACKER_PORT'] = args.port
     os.environ['DMLC_RANK'] = args.rank
+
+    print(f'Rank: {args.rank}')
+
+    rabit.init()
 
     label_name = 'weighted_credited_sales_count_same_device'
 
