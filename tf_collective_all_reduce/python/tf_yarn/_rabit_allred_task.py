@@ -23,7 +23,10 @@ def _start_tracker(client, n_workers: int):
     tf.logging.info(f"Starting tracker with {n_workers} workers")
     rabit_context = tracker.RabitTracker(
         hostIP=tracker.get_host_ip(),
-        nslave=n_workers)
+        nslave=n_workers,
+        # will do bind(0) -> choose a random port
+        port=0,
+        port_end=1)
     rabit_context.start(n_workers)
     thread = Thread(target=rabit_context.join, daemon=True)
     thread.start()
