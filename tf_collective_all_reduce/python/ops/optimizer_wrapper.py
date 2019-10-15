@@ -14,7 +14,8 @@ class DistributedOptimizer(tf.train.Optimizer):
             self, optimizer, n_workers, name=None,
             use_locking=False, average=True,
             indices_compression=Compression.none,
-            values_compression=Compression.none
+            values_compression=Compression.none,
+            group_gradients=True
     ):
         """Construct a new DistributedOptimizer, which uses another optimizer
         under the hood for computing single-process gradient values and
@@ -40,12 +41,17 @@ class DistributedOptimizer(tf.train.Optimizer):
             of indices can be coded with less than 64 bits.
           values_compression:
             Compression algorithm to apply on gradient values
+          group_gradients:
+            Default: True
+            Whether to send all gradients in a group to allreduce/allgather
+            faster but consumes more memory
         """
         self._optimizer = optimizer
         self.n_workers = n_workers
         self.average = average
         self.indices_compression = indices_compression
         self.values_compression = values_compression
+        self.group_gradients = group_gradients
         self.dependencies = []
 
         super(DistributedOptimizer, self).__init__(
@@ -69,8 +75,15 @@ class DistributedOptimizer(tf.train.Optimizer):
     def _allreduce(self, tensors, compression=Compression.none):
         return self._op_with_dependencies(allreduce, tensors, compression)
 
-    def _allreduce_grads(self, grads_vars):
-        tf.logging.info(f"Creating allreduce ops for {grads_vars}")
+    def _create_deduplicated_indexed_slices(self, indices, values, dense_shape):
+        values, indices = opt._deduplicate_indexed_slices(values, indices)
+        return tf.IndexedSlices(
+            indices=indices,
+            values=values,
+            dense_shape=dense_shape
+        )
+
+    def _allreduce_grads_group(self, grads_vars):
         grads_vars_to_gather = defaultdict(list)
         grads_vars_to_reduce = defaultdict(list)
         for grad, var in grads_vars:
@@ -119,13 +132,31 @@ class DistributedOptimizer(tf.train.Optimizer):
 
         return new_grads_vars
 
-    def _create_deduplicated_indexed_slices(self, indices, values, dense_shape):
-        values, indices = opt._deduplicate_indexed_slices(values, indices)
-        return tf.IndexedSlices(
-            indices=indices,
-            values=values,
-            dense_shape=dense_shape
-        )
+    def _allreduce_grad_one_by_one(self, tensor):
+        n_workers = tf.cast(self.n_workers, dtype=tensor.dtype)
+        if isinstance(tensor, tf.IndexedSlices):
+            dedup_tensor = self._create_deduplicated_indexed_slices(
+                tensor.indices,
+                tensor.values,
+                tensor.dense_shape)
+            indices = self._allgather([dedup_tensor.indices], self.values_compression)[0]
+            values = self._allgather([dedup_tensor.values], self.indices_compression)[0]
+            if self.average:
+                values = tf.div(values, n_workers)
+            return tf.IndexedSlices(
+                indices=indices,
+                values=values,
+                dense_shape=tensor.dense_shape)
+        else:
+            summed_tensor = self._allreduce([tensor], self.values_compression)[0]
+            if self.average:
+                summed_tensor = tf.div(summed_tensor, n_workers)
+            return summed_tensor
+
+    def _allreduce_grads_one_by_one(self, grads_vars):
+        grads, vars = zip(*grads_vars)
+        aggregated_grads = [self._allreduce_grad_one_by_one(grad) for grad in grads]
+        return list(zip(aggregated_grads, vars))
 
     def compute_gradients(self, *args, **kwargs):
         """Compute gradients of all trainable variables.
@@ -137,7 +168,11 @@ class DistributedOptimizer(tf.train.Optimizer):
         """
         grads_vars = self._optimizer.compute_gradients(*args, **kwargs)
         if self.n_workers > 1:
-            return self._allreduce_grads(grads_vars)
+            tf.logging.info(f"Creating allreduce ops for {grads_vars}")
+            if self.group_gradients:
+                return self._allreduce_grads_group(grads_vars)
+            else:
+                return self._allreduce_grads_one_by_one(grads_vars)
         else:
             return grads_vars
 
