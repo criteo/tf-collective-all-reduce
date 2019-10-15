@@ -1,0 +1,4 @@
+plugins {
+    id "com.criteo.moab-module"
+    id "com.criteo.pymoab-module"
+}
