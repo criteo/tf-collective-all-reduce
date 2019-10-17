@@ -57,7 +57,7 @@ def experiment_fn() -> Experiment:
     train_spec = tf.estimator.TrainSpec(
         train_input_fn,
         max_steps=1000,
-        hooks=[BroadcastGlobalVariablesHook(0)]
+        hooks=[BroadcastGlobalVariablesHook()]
     )
     return Experiment(estimator, train_spec, tf.estimator.EvalSpec(lambda: True))
 

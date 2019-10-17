@@ -44,8 +44,8 @@ def start(nworkers):
 
             rabit_context = _start_tracker()
 
-            _logger.info(f"rabit context {rabit_context.alive()}"
-                         f"{rabit_context.port} {rabit_context.hostIP}")
+            _logger.info(f"rabit context alive={rabit_context.alive()}"
+                         f" port={rabit_context.port} ip={rabit_context.hostIP}")
 
             process = []
             for i in range(nworkers):
