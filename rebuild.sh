@@ -1,6 +1,4 @@
 
-. tf_env/bin/activate
-
 make clean
 make pip_pkg
 
@@ -11,7 +9,4 @@ python tests/simple_tests.py --ip 127.0.0.1 --port 9091 --rank 0 --nworkers 2 > 
 
 python tests/simple_tests.py --ip 127.0.0.1 --port 9091 --rank 1 --nworkers 2
 
-deactivate
-
 kill $TRACKER_PID
-
