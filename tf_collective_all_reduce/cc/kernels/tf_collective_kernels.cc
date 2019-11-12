@@ -25,7 +25,7 @@
 
 #define ALLREDUCE_SUM 2
 
-#define RABIT_ENUM_SIZE_T 10
+#define RABIT_ENUM_SIZE_T 5
 
 #define LOG_LEVEL WARNING
 
@@ -175,7 +175,7 @@ public:
         int ringPrevRank = RabitGetRingPrevRank();
         size_t n_slicesPerWorker[n_workers];
         n_slicesPerWorker[rank] = input_shape.dim_size(0);
-        RabitAllgatherRing((void*)(n_slicesPerWorker), n_workers, rank, 1, 1, RABIT_ENUM_SIZE_T);
+        RabitAllgather((void*)(n_slicesPerWorker), n_workers, rank, 1, 1, RABIT_ENUM_SIZE_T);
 
         size_t n_slicesBefore = std::accumulate(n_slicesPerWorker, n_slicesPerWorker + rank, 0, std::plus<size_t>());
         size_t n_slices = n_slicesBefore + std::accumulate(n_slicesPerWorker + rank, n_slicesPerWorker + n_workers, 0, std::plus<size_t>());
@@ -193,7 +193,7 @@ public:
             output_flat(beginIndex + j) = input_flat(j);
         }
 
-        RabitAllgatherRing((void *)output_flat.data(), n_elemsPerSlice * n_slices, beginIndex, input_flat.size(),
+        RabitAllgather((void *)output_flat.data(), n_elemsPerSlice * n_slices, beginIndex, input_flat.size(),
                 n_slicesPerWorker[ringPrevRank] * n_elemsPerSlice, getTypeId<T>());
         auto stop = high_resolution_clock::now();
         auto duration = duration_cast<microseconds>(stop - start);

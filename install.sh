@@ -17,7 +17,7 @@ pushd libs
     make
   popd
 
-  git clone git@gitlab.criteois.com:g.racic/rabit-fork.git rabit
+  git clone git@github.com:criteo-forks/rabit.git
   pushd rabit
     make
   popd
