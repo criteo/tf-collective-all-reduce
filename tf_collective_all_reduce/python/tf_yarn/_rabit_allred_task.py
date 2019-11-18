@@ -4,6 +4,9 @@ import os
 import skein
 from threading import Thread
 
+from tf_yarn.tasks import logging as tf_yarn_logging
+tf_yarn_logging.setup()
+
 from tf_yarn import _task_commons, cluster, event
 from tf_collective_all_reduce.python.tf_yarn import tracker
 from tf_collective_all_reduce.python.ops import rabit
@@ -76,5 +79,4 @@ def main():
 
 
 if __name__ == "__main__":
-    _task_commons._process_arguments()
     main()

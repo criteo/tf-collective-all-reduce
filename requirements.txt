@@ -1,1 +1,3 @@
+# Library import error with newer tensorflow versions
+tensorflow==1.12.2
 tf_yarn
