@@ -153,7 +153,7 @@ class RabitTracker(object):
         for port in range(port, port_end):
             try:
                 sock.bind((hostIP, port))
-                self.port = port
+                self.port = sock.getsockname()[1]
                 break
             except socket.error as e:
                 if e.errno in [98, 48]:
