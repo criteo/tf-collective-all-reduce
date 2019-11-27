@@ -62,7 +62,15 @@ def _worker_fn(task_type, task_id, client):
     experiment = _task_commons._get_experiment(client)
 
     if task_type != 'chief':
+        # Overwrite config to do nothing but training to improve training speed
         experiment.estimator._model_dir = "."
+        new_config = experiment.estimator.config.replace(
+            save_summary_steps=None,
+            save_checkpoints_steps=None,
+            save_checkpoints_secs=None,
+            log_step_count_steps=None
+        )
+        experiment.estimator._config = new_config
 
     logger.info(f"start training..")
 
