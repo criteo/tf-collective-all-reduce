@@ -12,7 +12,7 @@ pushd libs
   tar -xzf  boost_1_70_0.tar.gz
   rm boost_1_70_0.tar.gz
 
-  git clone git@gitlab.criteois.com:g.racic/dmlc-core.git
+  git clone git@github.com:dmlc/dmlc-core.git
   pushd dmlc-core
     make
   popd
