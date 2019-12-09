@@ -1,3 +1,7 @@
+# tf-collective-all-reduce
+
+Lightweight framework for distributing machine learning training based on [Rabit](https://github.com/dmlc/rabit) for the communication layer. We borrowed [Horovod](https://github.com/horovod/horovod)'s concepts for the TensorFlow optimizer wrapper.
+
 # Installation
 
 ```
