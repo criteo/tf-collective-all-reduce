@@ -1,5 +1,5 @@
 """
-from https://gitlab.criteois.com/g.racic/rabit-fork/blob/master/python/rabit.py
+from https://github.com/dmlc/rabit/blob/master/python/rabit.py
 Reliable Allreduce and Broadcast Library.
 
 Author: Tianqi Chen

@@ -1,6 +1,6 @@
 """
-Example of custom distributed training with one node trainings
-and using https://gitlab.criteois.com/g.racic/rabit-fork AllReduce
+Example of custom distributed training with one node
+using rabit all reduce
 """
 import logging
 import os
@@ -30,7 +30,7 @@ USER = getpass.getuser()
 2. Upload it to HDFS
 3. Pass a full URI to either of the CSV files to the example
 """
-WINE_EQUALITY_FILE = f"{packaging.get_default_fs()}/user/{USER}/tf_yarn_test/winequality-red.csv"
+WINE_EQUALITY_FILE = f"{packaging.get_default_fs()}/user/testfwk/tf_yarn_test/winequality-red.csv"
 
 """
 Output path of the learned model on hdfs
