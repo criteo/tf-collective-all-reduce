@@ -1,0 +1,24 @@
+language: python
+os: linux
+python: 3.6
+ 
+services:
+  - docker
+
+jobs:
+  include:
+  - name: lint
+    install: pip install pylama
+    script: pylama
+  - name: mypy
+    install: pip install mypy
+    script: mypy examples tests tf_collective_all_reduce --ignore-missing-imports
+  - name: env-check
+    install: pip install -r requirements.txt
+    script: pip check
+  - name: tests
+    install: docker build --no-cache -t allred .
+    script: docker run -v "$(pwd):/root/tf-collective-all-reduce" allred /root/tf-collective-all-reduce/ci/run_tests.sh
+
+notifications:
+  email: false
