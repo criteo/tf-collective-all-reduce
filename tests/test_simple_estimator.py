@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 import os
 import argparse
+import tempfile
 
 from tf_collective_all_reduce.python.ops import rabit, optimizer_wrapper, broadcast_variables_hook
 import rabit_starter
@@ -62,27 +63,28 @@ def test_simple_estimator():
     @rabit_starter.start(2)
     def simple_estimator(rank=None):
 
-        estimator = tf.estimator.Estimator(
-            model_fn, model_dir="model_dir",
-            config=tf.estimator.RunConfig(),
-            params={
-                "feature_columns": lambda: [
-                    tf.feature_column.categorical_column_with_hash_bucket(
-                        "partnerid",
-                        13,
-                        dtype=tf.int64),
-                    tf.feature_column.categorical_column_with_hash_bucket(
-                        "campaignid",
-                        3,
-                        dtype=tf.int64)
-                ]
-            }
-        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            estimator = tf.estimator.Estimator(
+                model_fn, model_dir=tempdir,
+                config=tf.estimator.RunConfig(),
+                params={
+                    "feature_columns": lambda: [
+                        tf.feature_column.categorical_column_with_hash_bucket(
+                            "partnerid",
+                            13,
+                            dtype=tf.int64),
+                        tf.feature_column.categorical_column_with_hash_bucket(
+                            "campaignid",
+                            3,
+                            dtype=tf.int64)
+                    ]
+                }
+            )
 
-        estimator.train(
-            training_input_fn,
-            steps=100,
-            hooks=[broadcast_variables_hook.BroadcastGlobalVariablesHook()]
-        )
+            estimator.train(
+                training_input_fn,
+                steps=100,
+                hooks=[broadcast_variables_hook.BroadcastGlobalVariablesHook()]
+            )
 
     simple_estimator()
