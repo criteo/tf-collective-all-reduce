@@ -12,7 +12,7 @@ jobs:
     script: pylama
   - name: mypy
     install: pip install mypy
-    script: mypy examples tests tf_collective_all_reduce --ignore-missing-imports
+    script: mypy . --ignore-missing-imports
   - name: env-check
     install: pip install -r requirements.txt
     script: pip check
