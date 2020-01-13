@@ -30,7 +30,7 @@ pytest -s
 ## Local run with [dmlc-submit](https://github.com/dmlc/dmlc-core/tree/master/tracker)
 
 ```
-./libs/dmlc-core/tracker/dmlc-submit --cluster local --num-workers 2 python examples/simple/simple_allreduce.py
+../dmlc-core/tracker/dmlc-submit --cluster local --num-workers 2 python examples/simple/simple_allreduce.py
 ```
 
 ## Run on a Hadoop cluster with [tf-yarn](https://github.com/criteo/tf-yarn)
