@@ -32,7 +32,7 @@ def main():
         [np.testing.assert_array_equal(a, b * n_workers) for a, b in
          zip(allreduce_res_np, tensors_to_reduce_np)]
 
-    print("Everything's OK!")
+    print(f"Everything's OK from {rank}!")
 
     rabit.finalize()
 
