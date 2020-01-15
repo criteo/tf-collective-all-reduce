@@ -1,6 +1,6 @@
 """
-Example of custom distributed training with one node trainings
-and using https://gitlab.criteois.com/g.racic/rabit-fork AllReduce
+Example of custom distributed training with one node
+using rabit all reduce
 """
 import logging
 import os
